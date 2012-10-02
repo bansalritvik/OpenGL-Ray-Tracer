@@ -31,7 +31,8 @@ class vector3
 public:
         vector3() : x( 0.0f ), y( 0.0f ), z( 0.0f ) {};
         vector3( float a_X, float a_Y, float a_Z ) : x( a_X ), y( a_Y ), z( a_Z ) {};
-        void Set( float a_X, float a_Y, float a_Z ) { x = a_X; y = a_Y; z = a_Z; }
+		vector3( GLfloat *vector ) : x( vector[0] ), y( vector[1] ), z( vector[2] ) {};
+		void Set( float a_X, float a_Y, float a_Z ) { x = a_X; y = a_Y; z = a_Z; }
         void Normalize() { float l = 1.0f / Length(); x *= l; y *= l; z *= l; }
         float Length() { return (float)sqrt( x * x + y * y + z * z ); }
         float SqrLength() { return x * x + y * y + z * z; }

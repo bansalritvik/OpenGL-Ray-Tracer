@@ -21,11 +21,12 @@ int winH = 256;
 # define MODE_RAY_CAST 1
 
 int mode = MODE_RAY_CAST;
+int showShadows = 0;
 
 GLfloat light_ambient[] = {1.0, 1.0, 1.0};
 GLfloat light_specular[] = {1.0, 1.0, 1.0};
 GLfloat light_diffuse[] = {1.0, 1.0, 1.0};
-GLfloat light_position[] = {0.0, 5.0, 0.0};
+GLfloat light_position[] = {0.0, 2.0, 3.0, 1};
 
 GLMmodel *model;
 
@@ -38,6 +39,8 @@ void glutSpecial(int key, int xx, int yy);
 void glutResize(int width, int height);
 void getObjModel();
 vector3 doesRayIntersectTriangle(vector3 rayPoint, vector3 rayDirection, vector3 p0, vector3 p1, vector3 p2);
+int isLightVisibleFromPoint(vector3 point);
+vector3 calculateColorForPoint(float i, float j, vector3 normal, vector3 point, vector3 direction, GLMtriangle trianglePointIsOn, GLMmaterial materialOfTriangle, vector3 p0, vector3 p1, vector3 p2);
 
 void main() {
 	getObjModel();
@@ -80,7 +83,7 @@ void glutResize(int width, int height) {
 	glLoadIdentity();
 
 	//gluPerspective(90, winW/winH, 1, 9999);
-	glFrustum(-1, 1, -1, 1, 1, 10);
+	glFrustum(-1, 1, -1, 1, .9, 2.1);
 	glMatrixMode(GL_MODELVIEW);
 }
 
@@ -91,6 +94,8 @@ void glutKeyboard(unsigned char key, int x, int y) {
 			printf("Using OpenGL for rendering\n");
 		else
 			printf("Using ray casting for rendering\n");
+	} else if (key == 's' || key == 'S') {
+		showShadows = !showShadows;
 	}
 
 	glutPostRedisplay();
@@ -143,7 +148,7 @@ void glutDisplay() {
 			glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, material.shininess);
 			for (i=0; i<group->numtriangles; i++) {
 				int triangle = group->triangles[i];
-				glNormal3fv(&model->facetnorms[model->triangles[triangle].findex]);
+				glNormal3fv(&model->facetnorms[3*model->triangles[triangle].findex]);
 				for (j=0; j<3; j++) {
 					int index = model->triangles[triangle].vindices[j];
 					vector3 vertex(model->vertices[3*index],		// x
@@ -166,41 +171,47 @@ void glutDisplay() {
 			for (j=-1.0f; j<=1.01f; j+= (1.0f/255.0f)) {
 				float mindepth = FLT_MAX;
 				GLMgroup *mingroup;
+				int mintriangle;
+				vector3 result;
+				vector3 minp0, minp1, minp2;
 				GLMgroup *group = model->groups;
+				vector3 direction = vector3(i,j,0)-eye;
+						direction.Normalize();
 				while (group) {
 					for (k=0; k<group->numtriangles; k++) {
 						vector3 vertices[3];
 						int triangle = group->triangles[k];
 						for (l=0; l<3; l++) {
 							int index = model->triangles[triangle].vindices[l];
-							vertices[l] = vector3(model->vertices[3*index],		// x
+							vertices[l] = vector3(model->vertices[3*index], // x
 											model->vertices[3*index+1],		// y
 											model->vertices[3*index+2]);	// z
 						}
-						vector3 direction = vector3(i,j,0)-eye;
-						direction.Normalize();
-						vector3 intersection = doesRayIntersectTriangle(eye, direction, vertices[0], vertices[1], vertices[2]);
-						if (intersection.x == FLT_MAX)
+						result = doesRayIntersectTriangle(eye, direction, vertices[0], vertices[1], vertices[2]);
+						if (result.x == FLT_MAX)
 							continue;
 
-						float depth = intersection.x;
+						float depth = result.x;
 						if (depth < mindepth) {
 							mingroup = group;
+							mintriangle = triangle;
+							minp0 = vertices[0];
+							minp1 = vertices[1];
+							minp2 = vertices[2];
 							mindepth = depth;
 						}
 					}
 					group = group->next;
 				}
 				if (mindepth < FLT_MAX) {
-					GLfloat ambient[] = {0, 0, 0};
-					GLMmaterial material = model->materials[mingroup->material]; 
-					ambient[0] = light_ambient[0]*material.ambient[0];
-					ambient[1] = light_ambient[1]*material.ambient[1];
-					ambient[2] = light_ambient[2]*material.ambient[2];
-					//GLfloat diffuse[] = {0, 0, 0};
-					//diffuse[0] = light_diffuse[0]*material.diffuse[0];
-					glColor3fv(ambient);
-					glVertex2f(i, j);
+					GLMtriangle triangle = model->triangles[mintriangle];
+					vector3 normal = (minp1-minp0).Cross(minp2-minp0);
+					normal.Normalize();
+					vector3 intersection = eye + mindepth*direction;
+
+					vector3 combined = calculateColorForPoint(i, j, normal, intersection, direction, triangle, model->materials[mingroup->material], minp0, minp1, minp2);
+					glColor3f(combined.x, combined.y, combined.z);
+					glVertex3f(i, j, -1);
 				}
 			}
 		}
@@ -215,6 +226,7 @@ void glutDisplay() {
 void getObjModel() {
 	model = glmReadOBJ("input.obj");
 	glmFacetNormals(model);
+	glmVertexNormals(model, 45);
 }
 
 // source modified from http://www.lighthouse3d.com/tutorials/maths/ray-triangle-intersection/
@@ -247,4 +259,73 @@ vector3 doesRayIntersectTriangle(vector3 rayPoint, vector3 rayDirection, vector3
 		return vector3(t, u, v);
 	else
 		return vector3(FLT_MAX, FLT_MAX, FLT_MAX);
+}
+
+int isLightVisibleFromPoint(vector3 point) {
+	vector3 toLight = light_position - point;
+	GLMgroup *group = model->groups;
+	while (group) {
+		for (int k=0; k<group->numtriangles; k++) {
+			vector3 vertices[3];
+			int triangle = group->triangles[k];
+			for (int l=0; l<3; l++) {
+				int index = model->triangles[triangle].vindices[l];
+				vertices[l] = vector3(model->vertices[3*index], // x
+								model->vertices[3*index+1],		// y
+								model->vertices[3*index+2]);	// z
+			}
+			vector3 result = doesRayIntersectTriangle(point, toLight, vertices[0], vertices[1], vertices[2]);
+			if (result.x != FLT_MAX)
+				return 0;
+		}
+		group = group->next;
+	}
+	return 1;
+}
+
+vector3 calculateColorForPoint(float i, float j, vector3 normal, vector3 point, vector3 direction, GLMtriangle trianglePointIsOn, GLMmaterial materialOfTriangle, vector3 p0, vector3 p1, vector3 p2) {
+	// AMBIENT
+	vector3 ambient = vector3(light_ambient)*vector3(materialOfTriangle.ambient);
+	// DIFFUSE & SPECULAR
+	vector3 diffuse, specular;
+	if (i<.6 && i>.5 && j>-.3 && j<-.2)
+			printf("break\n");
+	if (!showShadows || (showShadows && isLightVisibleFromPoint(point))) {
+		vector3 directionToLight = light_position - point;
+		directionToLight.Normalize();
+		vector3 reflection = -2*(directionToLight.Dot(normal))*normal+directionToLight;
+		reflection.Normalize();
+
+		float alpha = (((p2-p1).Cross(point-p1)).Dot(normal))/(((p1-p0).Cross(p2-p0)).Dot(normal));
+		float beta  = (((p0-p2).Cross(point-p2)).Dot(normal))/(((p1-p0).Cross(p2-p0)).Dot(normal));
+		float gamma = (((p1-p0).Cross(point-p0)).Dot(normal))/(((p1-p0).Cross(p2-p0)).Dot(normal));
+
+		vector3 p0Norm, p1Norm, p2Norm;
+		p0Norm = vector3(&model->normals[3*trianglePointIsOn.nindices[0]]);
+		p1Norm = vector3(&model->normals[3*trianglePointIsOn.nindices[1]]);
+		p2Norm = vector3(&model->normals[3*trianglePointIsOn.nindices[2]]);
+
+		normal = alpha*p0Norm + beta*p1Norm + gamma*p2Norm;
+		float temp = normal.Length();
+		normal.Normalize();
+
+		if (normal.Dot(directionToLight) >= 0)
+			diffuse = vector3(light_diffuse)*vector3(materialOfTriangle.diffuse)*
+				normal.Dot(directionToLight);
+		if (diffuse.x<0 || diffuse.y<0|| diffuse.z<0) {
+			// TODO what to do here?
+			diffuse.x = abs(diffuse.x);
+			diffuse.y = abs(diffuse.y);
+			diffuse.z = abs(diffuse.z);
+		}
+		float rdotn = reflection.Dot(direction);
+		float factor = pow(rdotn, materialOfTriangle.shininess);
+		specular = vector3(light_specular)*vector3(materialOfTriangle.specular)*factor;
+	}
+
+	vector3 combined = ambient+diffuse+specular;
+	if (i<.6 && i>.5 && j>-.3 && j<-.2)
+		return vector3(1,0,1);
+	else
+		return combined;
 }

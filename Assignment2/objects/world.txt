@@ -1,0 +1,6 @@
+gourd.obj
+cube.obj
+sphere.obj
+teapot.obj
+airboat.obj
+

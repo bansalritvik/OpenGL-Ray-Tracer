@@ -29,11 +29,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Object Include="input.obj">
-      <Filter>Source Files</Filter>
-    </Object>
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="glm\glm.h">
       <Filter>Header Files</Filter>
     </ClInclude>

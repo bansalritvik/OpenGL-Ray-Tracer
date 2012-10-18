@@ -1,0 +1,11 @@
+# Blender v2.63 (sub 0) OBJ File: ''
+# www.blender.org
+mtllib 45-plane.mtl
+o Plane
+v 0.500000 0.353554 0.853553
+v -0.500000 0.353554 0.853553
+v 0.500000 -0.353554 0.146447
+v -0.500000 -0.353554 0.146447
+usemtl 
+s off
+f 2 1 3 4
